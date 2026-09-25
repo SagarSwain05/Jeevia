@@ -1,188 +1,98 @@
 # Jeevia (जीविया)
-### Multimodal Healthcare Triage Assistant for Government and Institutional Health Facilities
 
-[![Status: Production Prototype](https://img.shields.io/badge/Status-Production_Prototype-teal.svg)](#)
-[![Compliance: Clinical Decision Support](https://img.shields.io/badge/Compliance-Decision_Support_Only-amber.svg)](#)
-[![Protocols: AIIMS ATP & IMCI](https://img.shields.io/badge/Protocols-AIIMS_ATP_%26_IMCI-red.svg)](#)
-[![Languages: 22 Indian Languages](https://img.shields.io/badge/Languages-22_Indian_Languages-blue.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-gray.svg)](#)
+**Human-in-the-loop multimodal triage assistant for government and institutional health facilities.**
+BPUT Hackathon 2026 · Problem Statement 3 (Cognizant).
 
----
+> **Educational prototype — triage support only.** Jeevia does not diagnose, prescribe or replace a qualified
+> professional. It uses synthetic data only. Every health-related output is advisory and reviewer-facing.
 
-## 1. Overview & Problem Statement
+**Live demo (frontend, mock API):** https://jeevia-triage.vercel.app — sign in with any demo account below; the OTP is always `123456`.
 
-**Jeevia** is a human-in-the-loop multimodal healthcare triage platform engineered specifically for the diverse, high-volume healthcare ecosystem across India. It bridges the critical gap between front-line intake and qualified medical review in facilities ranging from tertiary Government Hospitals and rural Primary Health Centres (PHCs) to industrial-estate occupational health units, public health camps, and university campus infirmaries.
-
-### Challenges Addressed:
-* **Severe Patient Load & Surge Volumes**: High patient-to-doctor ratios require instantaneous, deterministic prioritization so that time-critical red flags are surfaced in seconds.
-* **Linguistic Diversity**: Frontline patients speak regional languages and dialects; Jeevia integrates 22 Scheduled Indian Languages with voice recording, auto-translation, and local script display.
-* **Low Digital Maturity & Paper Records**: Patients frequently arrive with paper lab slips, handwritten OPD prescriptions, or physical blood reports. Jeevia captures these via camera OCR and maps findings directly to clinical parameters.
-* **Specialist Scarcity**: Referral options vary drastically by facility. Jeevia's dynamic facility engine restricts referral pathways strictly to on-site specialists or triggers regional tele-referral protocols.
+| Role | Phone | Lands on |
+|---|---|---|
+| Doctor / Medical Officer | 9000000001 | `/reviewer` — triage queue and case review |
+| Nurse / ANM | 9000000002 | `/reviewer` (nurse density) and `/kiosk` |
+| Receptionist | 9000000003 | `/admin` |
+| Supervisor | 9000000004 | `/admin` — facility setup, audit, retention |
+| Patient | 9876543210 | `/patient` — own visits, reminders, add a problem |
+| Employer / HR | 9000000005 | `/employer` — fitness cohorts only |
 
 ---
 
-## 2. Core Architectural Principles
+## What it does
 
-```
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                           PATIENT INTAKE KIOSK                         │
-  │   Text Input   │   Voice Recording   │   Document OCR   │   Visual     │
-  └───────────────────────────────────┬────────────────────────────────────┘
-                                      │
-                                      ▼
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                    MULTIMODAL EXTRACTION PIPELINE                      │
-  │   Regional ASR   │   PaddleOCR 2.6   │   Pixel & Audio Provenance Tag  │
-  └───────────────────┬───────────────────────────────┬────────────────────┘
-                      │                               │
-                      ▼                               ▼
-    ┌───────────────────────────────────┐   ┌──────────────────────────────┐
-    │   DETERMINISTIC RULES ENGINE      │   │    AI CLINICAL SYNTHESIS     │
-    │   - AIIMS Triage Protocol (Adult) │   │    - Jeevia-BioMistral-7B    │
-    │   - IMCI Rules (Pediatric)        │   │    - Structured Triage Note  │
-    │   - Hard-coded Urgency Tiering    │   │    - Non-diagnostic Summary  │
-    └─────────────────┬─────────────────┘   └──────────────┬───────────────┘
-                      │                                    │
-                      └──────────────────┬─────────────────┘
-                                         │
-                                         ▼
-                      ┌───────────────────────────────────────┐
-                      │    CROSS-ENGINE DISAGREEMENT CHECK    │
-                      │    (e.g., Voice BP vs OCR Lab BP)     │
-                      └──────────────────┬────────────────────┘
-                                         │
-                                         ▼
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                        QUALIFIED CLINICAL REVIEW                       │
-  │                  Doctor Dashboard / Supervisor Portal                  │
-  │      [Review] ──> [Sign & Accept] │ [Override Flag] │ [Referral]       │
-  └────────────────────────────────────────────────────────────────────────┘
-```
+A staff member unlocks a tablet kiosk. The patient (or a family member, as a recorded proxy) speaks or taps their
+symptoms in their own language, hears them read back, answers a few bounded follow-up questions and photographs any
+lab slips. A **deterministic YAML rules engine** (AIIMS Triage Protocol for adults, IMCI for under-fives, maternal
+red flags) assigns urgency. A structured note is built with **every extracted value sitting beside the image crop or
+transcript it came from**. A doctor reviews it in under four minutes, can override urgency only with a written reason,
+escalates or refers in one click, and exports PDF / print / JSON / CSV / FHIR. Every view, edit, override and export
+lands in a **hash-chained, append-only audit log**. Raw audio and photos expire automatically.
 
-1. **Human-in-the-Loop (Non-Diagnostic)**: Jeevia never generates standalone diagnoses or prescribes medicines. It synthesizes intake inputs into structured, audit-logged triage notes for qualified Medical Officers (MOs).
-2. **Deterministic Rules Engine Separation**: Urgency classification (Tier 1 Critical Red, Tier 2 Semi-Urgent Yellow, Tier 3 Routine Green) is computed strictly by deterministic rule sets (AIIMS Triage Protocol for adults, IMCI for pediatric patients). The LLM is restricted to text summarization and cannot downgrade rule outcomes.
-3. **End-to-End Source Traceability & Pixel Provenance**: Every vital sign and lab value displayed in the clinical dashboard contains an interactive provenance tag. Clinicians can click any value to view the exact physical report crop or play the source audio transcript.
-4. **Disagreement Detection Engine**: If a patient reports a blood pressure of `160/100 mmHg` via voice intake, but their uploaded paper lab report reads `170/105 mmHg`, the system flags an actionable alert requiring physical verification during examination.
-5. **Strict Data Privacy & Audit Trail**: In rural households, phone numbers are commonly shared across family members. Jeevia enforces multi-record candidate disambiguation and logs every clinical view and priority override to an immutable audit trail.
+### The golden rules, and where they are enforced
+
+| Rule | Enforcement |
+|---|---|
+| Non-diagnostic | Summaries only restate patient-provided information and end with a non-diagnostic statement; disclaimer bar on every screen (G6). |
+| Urgency only from rules, never the LLM | `backend/app/triage/rules/*.yaml` + `rules.py`; the note pipeline has no access to urgency. Frontend mock mirrors it in `lib/api/mock/rules.ts`. |
+| Patients never see triage status | API strips `urgency`, `note`, `override` for the patient role (`services.encounter_out`); patient UI shows workflow status only. |
+| Human in the loop | Override requires a doctor and a ≥15-character reason; the original rules output is kept in `rules_urgency`. Escalations require doctor acknowledgement. |
+| Flags, not confidence percentages | Notes carry `flags[]` (critical / warning / info) and `needs_check` markers; no model scores are shown. |
+| Minimal retention | Upload expiry: audio 24 h, images 72 h, reports 7 days; content served only via 10-minute signed URLs. |
+| Admins cannot read clinical notes | Receptionist / supervisor / employer get `403` on encounters and files; they see counts, config and audit only. |
 
 ---
 
-## 3. Platform Modules & Pages
-
-| Page | File | Target User | Description |
-|---|---|---|---|
-| **Public Landing Page** | [`index.html`](file:///Users/sagarswain/Desktop/Jeevia/index.html) | Public / Staff | Platform introduction, facility matrix showcase, and portal launcher with responsive dual navigation. |
-| **Staff Authentication** | [`auth.html`](file:///Users/sagarswain/Desktop/Jeevia/auth.html) | Doctors, Supervisors | Staff session authentication with smartcard/credential verification and facility context selector. |
-| **Patient Intake Kiosk** | [`patient-intake.html`](file:///Users/sagarswain/Desktop/Jeevia/patient-intake.html) | Patients, ASHA / ANM Workers | Tablet/kiosk data collection engine: Text, Regional Voice, Lab Slip OCR, Skin Lesion/Rash photo, and Proxy Consent. |
-| **Doctor Dashboard** | [`doctor-dashboard.html`](file:///Users/sagarswain/Desktop/Jeevia/doctor-dashboard.html) | Medical Officers | Real-time queue, auto-escalation timers, un-clustered modular clinical decision cards, longitudinal trending, and 1-click referral. |
-| **Supervisor Dashboard** | [`supervisor-dashboard.html`](file:///Users/sagarswain/Desktop/Jeevia/supervisor-dashboard.html) | Facility Administrators | Facility classification setup, live specialist on-site toggles, threshold calibration, and full audit logs. |
-
----
-
-## 4. UI/UX & Design System Standards
-
-* **Zero-Emoji Policy**: Replaced all informal emojis with clean, accessible, scalable SVG vector icons (`18×18` and `24×24` standard viewboxes).
-* **Typography**: Clean, professional sans-serif type stack (`Inter`, `-apple-system`, `BlinkMacSystemFont`, `Segoe UI`, `sans-serif`) across all 5 portals.
-* **Un-Clustered Modular Cards**: The Doctor Dashboard clinical decision-support panel separates clinical disclaimer, patient demographics, conflict alerts, AI notes, rules traces, vitals, OCR findings, longitudinal trending, missing checklist, and follow-up interview questions into distinct, elevated cards with subtle slate borders and generous breathing room.
-* **Adaptive Dual Navigation**:
-  * **Desktop / Tablet Landscape**: Left side panel with clean icon-text navigation and facility indicators.
-  * **Mobile View**: Centric layout with a touch-friendly, horizontal slider navigation bar and minimum `44×44px` touch targets.
-
----
-
-## 5. Clinical Protocols & Urgency Tiers
-
-Jeevia's triage prioritization strictly maps against established national and international healthcare guidelines:
-
-### Urgency Classifications:
-* 🔴 **Critical (Tier 1 - Immediate)**:
-  * Acute retrosternal chest pain radiating to arm / jaw (AIIMS ATP)
-  * Oxygen saturation ($\text{SpO}_2$) $< 90\%$ (Emergency COPD / Asthma)
-  * Systolic BP $\ge 160\text{ mmHg}$ or Diastolic $\ge 100\text{ mmHg}$ with headache or visual disturbance (Pre-eclampsia Red Flag)
-  * *Safety feature: Auto-escalates unreviewed critical cases to Senior Medical Officer after 15 minutes.*
-* 🟡 **Semi-Urgent (Tier 2 - Within 30–60 min)**:
-  * Persistent fever $> 102^\circ\text{F}$ for $> 3$ days in dengue-endemic zone
-  * Acute right lower quadrant abdominal pain (evaluating appendicitis / acute abdomen)
-  * Severe hyperglycaemia ($\text{Glucose} > 300\text{ mg/dL}$) with osmotic symptoms
-* 🟢 **Routine (Tier 3 - Standard Outpatient Order)**:
-  * Stable chronic follow-ups (Type 2 Diabetes, controlled hypertension)
-  * Stable antenatal visits (routine 3rd trimester check)
-  * Mild upper respiratory symptoms without respiratory distress
-
----
-
-## 6. Repository File Map
+## Repository layout
 
 ```
 Jeevia/
-├── index.html                  # Public platform landing page
-├── auth.html                   # Medical staff authentication portal
-├── patient-intake.html         # Multimodal tablet/kiosk intake engine
-├── doctor-dashboard.html       # Clinical decision-support dashboard for Medical Officers
-├── supervisor-dashboard.html   # Facility administration & specialist availability matrix
-├── README.md                   # Comprehensive platform documentation
-├── .gitignore                  # Git exclusions (OS files, caches)
-├── js/
-│   ├── landing.js              # Landing page interactivity & live metric counters
-│   ├── auth.js                 # Authentication logic & session storage handling
-│   ├── patient.js              # Kiosk multimodal capture, audio recording, & OCR simulation
-│   ├── doctor.js               # Queue sorting, auto-escalation timer, clinical cards renderer
-│   ├── supervisor.js           # Facility setup, specialist matrix toggles, audit logs
-│   └── nav.js                  # Shared mobile slider navigation & responsive behavior
-└── styles/
-    ├── base.css                # Global CSS variables, typography, colors, resets
-    ├── landing.css             # Public landing page styling
-    ├── auth.css                # Authentication portal styling
-    ├── patient.css             # Kiosk tablet touch-optimized layout
-    ├── doctor.css              # Doctor dashboard grid & de-clustered modular cards
-    ├── supervisor.css          # Supervisor configuration panels & audit table
-    ├── dashboard.css           # Shared dashboard elements & statistics cards
-    └── nav.css                 # Responsive slider and side navigation styles
+├── frontend/          Next.js 16 + TypeScript + Tailwind v4 PWA (all UIs)
+├── backend/           FastAPI + SQLAlchemy 2 (Postgres JSONB / SQLite for dev)
+├── prototype/         The original static HTML prototype, kept as design reference
+├── docs/ARCHITECTURE.md   Architecture, API contract, spec-item → code map, ownership
+├── docker-compose.yml Postgres + API + web
+└── .github/workflows/ci.yml   Backend tests + frontend lint / typecheck / build
 ```
 
----
+## Run it
 
-## 7. Getting Started & Local Setup
+### Frontend only (mock API — no backend needed)
+```bash
+cd frontend
+npm install
+npm run dev            # http://localhost:3000
+```
 
-Jeevia is built using pure modern web standards (HTML5, CSS3, ES6+ JavaScript) with zero runtime dependencies. It runs seamlessly offline in resource-constrained rural clinics.
+### Full stack with Docker (Postgres + FastAPI + web)
+```bash
+docker compose up --build
+# web  http://localhost:3000     API docs  http://localhost:8000/docs
+```
 
-### Quick Start:
+### Backend on its own
+```bash
+cd backend
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/uvicorn app.main:app --reload          # SQLite at ./data, seeded with synthetic data
+.venv/bin/pytest -q                               # 26 tests
+```
+Point the frontend at it with `NEXT_PUBLIC_API_MODE=live NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`.
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/SagarSwain05/Jeevia.git
-   cd Jeevia
-   ```
+## Team ownership
 
-2. **Launch via any Local Static Server**:
-   ```bash
-   # Using Python 3
-   python3 -m http.server 3000
+| Area | Owner | Status |
+|---|---|---|
+| Entire frontend: app structure, PWA, kiosk, uploads, reviewer dashboard, traceability, role density, escalation, referral/export UI, employer view, accessibility, offline intake | Krutee | Built — see `frontend/` |
+| API, auth (OTP / PIN / device binding / JWT), consent, audit log, file storage, exports, facility admin, logging, Docker | Saanvi | Built — see `backend/` |
+| ML pipeline (ASR, translation, OCR, summariser), patient identity resolution, retention purge job | Jyoti | Interfaces and stubs in place: `triage/pipeline.py`, `storage.purge_expired`, `services.own_patient` |
 
-   # Or using Node.js
-   npx serve .
-   ```
+Details and the spec-code map (A1, 3D, E1…H9) are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-3. **Open in Browser**:
-   * Landing Page: `http://localhost:3000/index.html`
-   * Doctor Dashboard: `http://localhost:3000/doctor-dashboard.html`
-   * Patient Kiosk: `http://localhost:3000/patient-intake.html`
-   * Supervisor Console: `http://localhost:3000/supervisor-dashboard.html`
-   * Staff Auth: `http://localhost:3000/auth.html`
+## Clinical safety notice
 
----
+Jeevia is an assistive triage prototype for research and workflow demonstration. All outputs — summaries, extracted
+values, rule-based urgency — exist only to assist qualified, licensed professionals. It provides no diagnosis,
+treatment or prescription. Clinical accountability remains with the examining clinician.
 
-## 8. Clinical Safety & Legal Disclaimer
-
-> [!CAUTION]
-> **CLINICAL DECISION-SUPPORT SYSTEM ONLY — STRICTLY NON-DIAGNOSTIC PROTOTYPE**
->
-> Jeevia is an assistive triage prototype engineered for research, facility workflow optimization, and operational testing. All outputs—including AI summaries, extracted vitals, and deterministic protocol triggers—are presented solely to assist qualified, licensed Medical Officers and healthcare professionals. Under no circumstances does Jeevia provide medical diagnosis, direct clinical treatment, or prescription authority. Ultimate diagnostic and therapeutic accountability remains strictly with the examining clinician.
-
----
-
-## 9. Author & Contribution
-
-* **Repository**: [https://github.com/SagarSwain05/Jeevia.git](https://github.com/SagarSwain05/Jeevia.git)
-* **Author / Maintainer**: Sagar Swain
-* **License**: MIT License
+License: MIT
