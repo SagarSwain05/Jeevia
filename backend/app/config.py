@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     retention_hours_audio: int = 24
     retention_hours_image: int = 72
     retention_hours_report: int = 720  # 30 days, so reports travel with referrals
+    directory_autoload: bool = True  # load directory_data/ snapshot into an empty facility_directory at start-up
 
     escalate_red_min: int = 15
     escalate_yellow_min: int = 60

@@ -57,7 +57,8 @@ async def lifespan(_: FastAPI):
             seed(db)
     from . import directory
 
-    directory.load_in_background_if_empty(SessionLocal)
+    if get_settings().directory_autoload:
+        directory.load_in_background_if_empty(SessionLocal)
     stop = threading.Event()
     threading.Thread(target=_housekeeping_loop, args=(stop,), name="housekeeping", daemon=True).start()
     log.info("Jeevia API ready", extra={"path": settings.database_url.split("@")[-1]})

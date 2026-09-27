@@ -180,7 +180,7 @@ def load_in_background_if_empty(session_factory) -> None:
                         return
                 try:
                     n = load(db)
-                    log.info("facility directory loaded", extra={"path": str(n)})
+                    log.info("facility directory loaded: %s facilities", n)
                 finally:
                     if db.get_bind().dialect.name == "postgresql":
                         db.execute(text("SELECT pg_advisory_unlock(7274423)"))
@@ -211,21 +211,26 @@ def search(db: Session, q: str, state: str | None = None, limit: int = 20) -> li
         out.append(_fac_out(f, org_name))
 
     # 2) National directory
-    dq = select(DirectoryFacility)
     pin = next((t for t in tokens if re.fullmatch(r"\d{6}", t)), None)
     words = [t for t in tokens if t != pin]
-    if pin:
-        dq = dq.where(DirectoryFacility.pincode == pin)
-    for t in words:
-        like = f"%{t}%"
-        dq = dq.where(or_(func.lower(DirectoryFacility.name).like(like), func.lower(func.coalesce(DirectoryFacility.district, "")).like(like), func.lower(func.coalesce(DirectoryFacility.city, "")).like(like)))
-    if state:
-        dq = dq.where(DirectoryFacility.state == state)
-    if pg and words:
-        dq = dq.order_by(func.similarity(func.lower(DirectoryFacility.name), " ".join(words)).desc())
-    else:
-        dq = dq.order_by(func.length(DirectoryFacility.name))
-    rows = list(db.scalars(dq.limit(limit)))
+
+    def directory_query(required: list[str]):
+        dq = select(DirectoryFacility)
+        if pin:
+            dq = dq.where(DirectoryFacility.pincode == pin)
+        for t in required:
+            like = f"%{t}%"
+            dq = dq.where(or_(func.lower(DirectoryFacility.name).like(like), func.lower(func.coalesce(DirectoryFacility.district, "")).like(like), func.lower(func.coalesce(DirectoryFacility.city, "")).like(like)))
+        if state:
+            dq = dq.where(DirectoryFacility.state == state)
+        if pg and words:
+            return dq.order_by(func.similarity(func.lower(DirectoryFacility.name), " ".join(words)).desc())
+        return dq.order_by(func.length(DirectoryFacility.name))
+
+    rows = list(db.scalars(directory_query(words).limit(limit)))
+    if not rows and len(words) > 1:
+        # Every word must match normally; if that finds nothing, keep the first word and rank by similarity.
+        rows = list(db.scalars(directory_query(words[:1]).limit(limit)))
     active = {f.directory_ref: f.id for f in db.scalars(select(Facility).where(Facility.directory_ref.in_([r.ref for r in rows])))} if rows else {}
     for r in rows:
         out.append({
